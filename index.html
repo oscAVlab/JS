@@ -3,125 +3,113 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Jardín Secreto - Debug Final</title>
+    <title>Jardín Secreto - Producción</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; color: #00ff88; font-family: monospace; }
-        #overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; }
-        button { padding: 25px 50px; font-size: 20px; background: #00ff88; color: #000; border: none; cursor: pointer; font-weight: bold; border-radius: 10px; }
-        #log { margin-top: 20px; color: white; font-size: 12px; text-align: center; padding: 0 20px; }
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: monospace; color: #00ff88; }
+        #interface { 
+            position: absolute; inset: 0; display: flex; flex-direction: column; 
+            align-items: center; justify-content: center; z-index: 100; background: rgba(0,0,0,0.85); 
+        }
+        button { 
+            padding: 20px 50px; font-size: 22px; background: #00ff88; color: #000; 
+            border: none; cursor: pointer; border-radius: 10px; font-weight: bold;
+        }
+        #status { margin-top: 20px; font-size: 14px; color: #fff; text-align: center; }
+        #video_debug { position: absolute; bottom: 10px; left: 10px; width: 120px; border: 1px solid #333; transform: scaleX(-1); z-index: 50; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 </head>
 <body>
 
-<div id="overlay">
-    <button id="btnEntrar">CARGANDO...</button>
-    <div id="log">Iniciando sistema...</div>
-</div>
+    <div id="interface">
+        <button id="btnStart">ENTRAR AL JARDÍN</button>
+        <div id="status">Iniciando...</div>
+    </div>
 
-<video id="v" style="display:none" playsinline></video>
+    <video id="video_debug" autoplay playsinline></video>
 
-<script type="module">
-    import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-    import { OBJLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/OBJLoader.js';
+    <script type="module">
+        import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+        import { OBJLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/OBJLoader.js';
 
-    const btn = document.getElementById('btnEntrar');
-    const log = document.getElementById('log');
+        const status = document.getElementById('status');
+        const btnStart = document.getElementById('btnStart');
+        const interfaceDiv = document.getElementById('interface');
 
-    // --- 1. TEST DE SEGURIDAD ---
-    if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
-        alert("ERROR: Debes usar HTTPS para activar la cámara en GitHub.");
-    }
+        // --- 1. ESCENA 3D ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 2, 5);
 
-    // --- 2. ESCENA ---
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    document.body.appendChild(renderer.domElement);
-    
-    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-    const pointLight = new THREE.PointLight(0xffffff, 100);
-    pointLight.position.set(0, 5, 5);
-    scene.add(pointLight);
-
-    // --- 3. CARGA DE OBJETO ---
-    let roses;
-    const loader = new OBJLoader();
-    
-    log.innerText = "Buscando chqui2.obj...";
-    
-    loader.load('chqui2.obj', 
-        (obj) => {
-            log.innerText = "Rosa cargada. Toca el botón verde.";
-            btn.innerText = "ENTRAR AL JARDÍN";
-            btn.style.background = "#00ff88";
-            
-            let geo;
-            obj.traverse(c => { if(c.isMesh) geo = c.geometry; });
-            const mat = new THREE.MeshStandardMaterial({ color: 0x00ff88, wireframe: true });
-            
-            roses = new THREE.InstancedMesh(geo, mat, 50);
-            const dummy = new THREE.Object3D();
-            for(let i=0; i<50; i++){
-                dummy.position.set((Math.random()-0.5)*10, (Math.random()-0.5)*10, (Math.random()-0.5)*10);
-                const s = 150; 
-                dummy.scale.set(s,s,s);
-                dummy.updateMatrix();
-                roses.setMatrix(i, dummy.matrix);
-            }
-            scene.add(roses);
-        },
-        undefined,
-        (err) => {
-            log.innerHTML = "<b style='color:red'>ERROR: chqui2.obj no encontrado.</b><br>Asegúrate que el archivo se llame exactamente así.";
-            console.error(err);
-        }
-    );
-
-    // --- 4. CÁMARA Y PERMISOS ---
-    async function startApp() {
-        log.innerText = "Solicitando cámara...";
-        try {
-            const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
-            hands.setOptions({ maxNumHands: 2, modelComplexity: 1 });
-            
-            const video = document.getElementById('v');
-            const cam = new Camera(video, {
-                onFrame: async () => { await hands.send({image: video}); },
-                width: 640, height: 480
-            });
-
-            await cam.start();
-            document.getElementById('overlay').style.display = 'none';
-            animate();
-        } catch (e) {
-            alert("Error al iniciar cámara: " + e.message);
-            log.innerText = "Fallo: " + e.message;
-        }
-    }
-
-    btn.addEventListener('click', () => {
-        if(btn.innerText === "ENTRAR AL JARDÍN") {
-            startApp();
-        } else {
-            alert("Espera a que la rosa cargue...");
-        }
-    });
-
-    function animate() {
-        requestAnimationFrame(animate);
-        if(roses) roses.rotation.y += 0.002;
-        renderer.render(scene, camera);
-    }
-
-    window.onresize = () => {
-        camera.aspect = window.innerWidth/window.innerHeight;
-        camera.updateProjectionMatrix();
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-    };
+        document.body.appendChild(renderer.domElement);
 
-</script>
+        const light = new THREE.PointLight(0xffffff, 100);
+        light.position.set(0, 5, 5);
+        scene.add(light);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+
+        // --- 2. CARGA DEL OBJETO (chqui2.obj) ---
+        let rosa;
+        const loader = new OBJLoader();
+        
+        status.innerText = "Buscando chqui2.obj...";
+
+        loader.load('./chqui2.obj', 
+            (obj) => {
+                status.innerText = "Rosa cargada correctamente.";
+                rosa = obj;
+                let geo;
+                obj.traverse(c => { if(c.isMesh) geo = c.geometry; });
+                
+                const mat = new THREE.MeshStandardMaterial({ color: 0x00ff88, wireframe: true });
+                const mesh = new THREE.InstancedMesh(geo, mat, 40);
+                const dummy = new THREE.Object3D();
+                for(let i=0; i<40; i++){
+                    dummy.position.set((Math.random()-0.5)*10, (Math.random()-0.5)*10, (Math.random()-0.5)*10);
+                    dummy.scale.set(150, 150, 150);
+                    dummy.updateMatrix();
+                    mesh.setMatrix(i, dummy.matrix);
+                }
+                scene.add(mesh);
+            },
+            undefined,
+            (err) => {
+                status.innerHTML = "<span style='color:red'>Error: chqui2.obj no encontrado. Revisa el nombre en GitHub.</span>";
+                console.error(err);
+            }
+        );
+
+        // --- 3. CÁMARA Y MEDIAPIPE ---
+        async function activarCamara() {
+            status.innerText = "Solicitando cámara...";
+            try {
+                const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
+                hands.setOptions({ maxNumHands: 1, modelComplexity: 1 });
+                
+                const video = document.getElementById('video_debug');
+                const cam = new Camera(video, {
+                    onFrame: async () => { await hands.send({image: video}); },
+                    width: 640, height: 480
+                });
+
+                await cam.start();
+                interfaceDiv.style.display = 'none';
+                animate();
+            } catch (e) {
+                alert("La cámara falló: " + e.message);
+                status.innerText = "Error de cámara: " + e.message;
+            }
+        }
+
+        btnStart.onclick = activarCamara;
+
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+    </script>
 </body>
 </html>
