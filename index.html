@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jardín Secreto - MediaPipe + Three.js</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #050505; 
+            font-family: monospace;
+            color: #ccc;
+        }
+        #info { 
+            position: absolute; 
+            top: 20px; 
+            left: 20px; 
+            z-index: 10; 
+            pointer-events: none;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border: 1px solid #333;
+            border-radius: 4px;
+        }
+        #video_debug {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 200px;
+            border-radius: 8px;
+            transform: scaleX(-1); /* Efecto espejo */
+            z-index: 10;
+            border: 2px solid #333;
+        }
+    </style>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+    <div id="info">Inicializando cámara y modelo...</div>
+    
+    <video id="video_debug" autoplay playsinline></video>
+
+    <script>
+        const videoElement = document.getElementById('video_debug');
+        const infoDiv = document.getElementById('info');
+        
+        // Variable global para pasar el dato al entorno 3D
+        window.handDistanceTarget = 0.5; // Valor normalizado de 0 a 1
+
+        const hands = new Hands({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+        }});
+
+        hands.setOptions({
+            maxNumHands: 2, // Buscamos dos manos para medir distancia
+            modelComplexity: 1,
+            minDetectionConfidence: 0.6,
+            minTrackingConfidence: 0.6
+        });
+
+        hands.onResults((results) => {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length === 2) {
+                // Tomamos el landmark 0 (la base de la muñeca) de ambas manos
+                const hand1 = results.multiHandLandmarks[0][0];
+                const hand2 = results.multiHandLandmarks[1][0];
+
+                // Calculamos la distancia euclidiana en el plano 2D de la cámara
+                const dx = hand1.x - hand2.x;
+                const dy = hand1.y - hand2.y;
+                let rawDistance = Math.sqrt(dx * dx + dy * dy);
+
+                // Normalizamos la distancia (usualmente entre 0.1 cerca y 0.8 muy lejos)
+                // Lo mapeamos a un rango de 0 a 1
+                let normalizedDist = (rawDistance - 0.1) / 0.6;
+                normalizedDist = Math.max(0, Math.min(1, normalizedDist)); // Clamp entre 0 y 1
+
+                window.handDistanceTarget = normalizedDist;
+                
+                let percent = Math.round(normalizedDist * 100);
+                infoDiv.innerHTML = `🟢 Manos detectadas<br>Apertura: ${percent}%<br>(Abre y cierra los brazos)`;
+            } else {
+                infoDiv.innerHTML = `🔴 Buscando manos...<br>Levanta ambas manos frente a la cámara.`;
+            }
+        });
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+            },
+            width: 640,
+            height: 480
+        });
+        camera.start();
+    </script>
+
+    <script type="module">
+        import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+
+        // 1. Configuración Básica
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x050505, 0.04);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 4, 12);
+        camera.lookAt(0, 2, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        // 2. Escenografía (Paredes para recibir sombras)
+        const wallMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
+        
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), wallMaterial);
+        floor.rotation.x = -Math.PI / 2;
+        floor.receiveShadow = true;
+        scene.add(floor);
+
+        const backWall = new THREE.Mesh(new THREE.PlaneGeometry(30, 15), wallMaterial);
+        backWall.position.set(0, 7.5, -5);
+        backWall.receiveShadow = true;
+        scene.add(backWall);
+
+        // 3. La Planta "Oreja de Conejo" Metálica (Mesh abstracto)
+        // Usamos un TorusKnot para simular la complejidad orgánica/alienígena
+        const plantGeo = new THREE.TorusKnotGeometry(2, 0.6, 200, 32, 3, 5);
+        const plantMat = new THREE.MeshStandardMaterial({ 
+            color: 0x888888, 
+            wireframe: true, 
+            metalness: 1, 
+            roughness: 0.2 
+        });
+        
+        const plant = new THREE.Mesh(plantGeo, plantMat);
+        plant.position.set(0, 3, 0);
+        plant.castShadow = true;
+        scene.add(plant);
+
+        // 4. Iluminación Dinámica
+        const ambientLight = new THREE.AmbientLight(0x222222);
+        scene.add(ambientLight);
+
+        const spotLight = new THREE.SpotLight(0xffaa00, 500); // Color ámbar inicial
+        spotLight.position.set(0, 10, 8);
+        spotLight.angle = 0.3; // Apertura inicial cerrada
+        spotLight.penumbra = 0.2;
+        spotLight.decay = 2;
+        spotLight.distance = 40;
+        spotLight.castShadow = true;
+        spotLight.shadow.mapSize.width = 2048;
+        spotLight.shadow.mapSize.height = 2048;
+        scene.add(spotLight);
+
+        // 5. Animación y Ruteo de Datos
+        let currentDistance = 0.5;
+        const colorCerrado = new THREE.Color(0xffaa00); // Ámbar (manos juntas)
+        const colorAbierto = new THREE.Color(0x00ffff); // Cian neón (manos separadas)
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Rotación constante y lenta de la planta
+            plant.rotation.y += 0.005;
+            plant.rotation.x += 0.002;
+
+            // LÓGICA DE INTERACCIÓN: Suavizado (Lerp) del dato crudo de MediaPipe
+            // Esto evita el "zipper noise" visual, equivalente al glide/portamento
+            currentDistance += (window.handDistanceTarget - currentDistance) * 0.1;
+
+            // MAPEO 1: Color de la luz (Interpola entre ámbar y cian)
+            spotLight.color.lerpColors(colorCerrado, colorAbierto, currentDistance);
+
+            // MAPEO 2: Apertura del foco de luz (ángulo)
+            spotLight.angle = 0.2 + (currentDistance * 0.6); // Se abre el foco al separar manos
+
+            // MAPEO 3: Altura de la planta (levita ligeramente)
+            plant.position.y = 3 + (currentDistance * 2);
+
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        // Responsive
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
