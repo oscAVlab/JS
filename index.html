@@ -3,215 +3,207 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Jardín Secreto - Contrapicado + MediaPipe</title>
+    <title>Jardín Secreto - Malla Real + MediaPipe</title>
     <style>
-        body { 
-            margin: 0; 
-            overflow: hidden; 
-            background-color: #050505; 
-            font-family: monospace;
-            color: #ccc;
-        }
+        body { margin: 0; overflow: hidden; background-color: #050505; font-family: monospace; color: #ccc; }
         #info { 
-            position: absolute; 
-            top: 20px; 
-            left: 20px; 
-            z-index: 10; 
+            position: absolute; top: 20px; left: 20px; z-index: 10; 
+            background: rgba(0,0,0,0.8); padding: 15px; border: 1px solid #444; border-radius: 8px; 
             pointer-events: none;
-            background: rgba(0,0,0,0.8);
-            padding: 15px;
-            border: 1px solid #444;
-            border-radius: 8px;
-            line-height: 1.5;
         }
         #video_debug {
-            position: absolute;
-            bottom: 20px;
-            right: 20px;
-            width: 240px;
-            border-radius: 8px;
-            transform: scaleX(-1); /* Efecto espejo */
-            z-index: 10;
-            border: 2px solid #444;
+            position: absolute; bottom: 20px; right: 20px; width: 240px; 
+            border-radius: 8px; transform: scaleX(-1); z-index: 10; border: 2px solid #444;
         }
     </style>
-
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 </head>
 <body>
-    <div id="info">
-        <h3>INICIALIZANDO...</h3>
-        Espera a que cargue el modelo.
-    </div>
-    
+    <div id="info"><h3>INICIALIZANDO...</h3></div>
     <video id="video_debug" autoplay playsinline></video>
 
     <script>
         const videoElement = document.getElementById('video_debug');
         const infoDiv = document.getElementById('info');
         
-        // Variables globales (Targets para el 3D) de 0 a 1
-        window.targetScale = 0.5;    // Mano Izquierda
-        window.targetHue = 0.5;      // Mano Derecha
-        window.targetAperture = 0.2; // Distancia (Abrir/Cerrar)
+        window.targetIntensity = 0.5;
+        window.targetColorSat = 0.0;
+        window.targetAperture = 0.2;
 
-        const hands = new Hands({locateFile: (file) => {
-            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
-        }});
-
-        hands.setOptions({
-            maxNumHands: 2,
-            modelComplexity: 1,
-            minDetectionConfidence: 0.6,
-            minTrackingConfidence: 0.6
-        });
+        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
 
         hands.onResults((results) => {
             if (results.multiHandLandmarks && results.multiHandLandmarks.length === 2) {
-                // Obtenemos la muñeca (Landmark 0) de las dos manos detectadas
-                let handA = results.multiHandLandmarks[0][0];
-                let handB = results.multiHandLandmarks[1][0];
+                let handA = results.multiHandLandmarks[0][9];
+                let handB = results.multiHandLandmarks[1][9];
 
                 let leftHandOnScreen, rightHandOnScreen;
-                
-                // Ordenamos por X para saber cuál está a cada lado
-                if (handA.x < handB.x) {
-                    leftHandOnScreen = handA;
-                    rightHandOnScreen = handB;
-                } else {
-                    leftHandOnScreen = handB;
-                    rightHandOnScreen = handA;
-                }
+                if (handA.x < handB.x) { leftHandOnScreen = handA; rightHandOnScreen = handB; } 
+                else { leftHandOnScreen = handB; rightHandOnScreen = handA; }
 
-                // CÁLCULO 1: Distancia (Abrir/Cerrar Manos) -> Apertura de luz
-                const dx = leftHandOnScreen.x - rightHandOnScreen.x;
-                const dy = leftHandOnScreen.y - rightHandOnScreen.y;
-                let rawDistance = Math.sqrt(dx * dx + dy * dy);
-                window.targetAperture = Math.max(0, Math.min(1, (rawDistance - 0.1) / 0.6));
-
-                // CÁLCULO 2 y 3: Alturas individuales (Invertimos Y para que arriba sea 1)
-                // Por el efecto espejo:
-                // La mano derecha en pantalla es tu MANO IZQUIERDA física (Tamaño)
-                window.targetScale = Math.max(0, Math.min(1, 1.0 - rightHandOnScreen.y));
-                
-                // La mano izquierda en pantalla es tu MANO DERECHA física (Color)
-                window.targetHue = Math.max(0, Math.min(1, 1.0 - leftHandOnScreen.y));
+                const rawDist = Math.hypot(leftHandOnScreen.x - rightHandOnScreen.x, leftHandOnScreen.y - rightHandOnScreen.y);
+                window.targetAperture = Math.max(0, Math.min(1, (rawDist - 0.15) / 0.45));
+                window.targetIntensity = Math.max(0, Math.min(1, 1.0 - rightHandOnScreen.y));
+                window.targetColorSat = Math.max(0, Math.min(1, 1.0 - leftHandOnScreen.y));
 
                 infoDiv.innerHTML = `
                     <h3>SISTEMA ACTIVO</h3>
-                    Mano Izq (Tamaño): ${Math.round(window.targetScale * 100)}%<br>
-                    Mano Der (Color): ${Math.round(window.targetHue * 100)}%<br>
-                    Apertura Manos (Luz): ${Math.round(window.targetAperture * 100)}%
+                    Izquierda (Intensidad): ${Math.round(window.targetIntensity * 100)}%<br>
+                    Derecha (Color Pastel): ${Math.round(window.targetColorSat * 100)}%<br>
+                    Apertura (Ángulo Luz): ${Math.round(window.targetAperture * 100)}%
                 `;
             } else {
-                infoDiv.innerHTML = `<h3>BUSCANDO MANOS...</h3><br>Levanta ambas manos frente a la cámara.`;
+                infoDiv.innerHTML = `<h3>BUSCANDO 2 MANOS...</h3>`;
             }
         });
 
-        const camera = new Camera(videoElement, {
-            onFrame: async () => { await hands.send({image: videoElement}); },
-            width: 640, height: 480
-        });
+        const camera = new Camera(videoElement, { onFrame: async () => { await hands.send({image: videoElement}); }, width: 640, height: 480 });
         camera.start();
     </script>
 
     <script type="module">
         import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 
-        // 1. Setup Base
         const scene = new THREE.Scene();
         scene.fog = new THREE.FogExp2(0x050505, 0.04);
 
         const cam3D = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
-        cam3D.position.set(0, 3, 12);
-        cam3D.lookAt(0, 3, 0);
+        cam3D.position.set(0, 4, 12); cam3D.lookAt(0, 3, 0);
 
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Sombras suaves de alta calidad
         document.body.appendChild(renderer.domElement);
 
-        // 2. Entorno (Paredes)
+        // 1. Entorno (Paredes)
         const wallMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
-        
         const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), wallMat);
-        floor.rotation.x = -Math.PI / 2;
-        floor.receiveShadow = true;
-        scene.add(floor);
+        floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
 
         const backWall = new THREE.Mesh(new THREE.PlaneGeometry(40, 20), wallMat);
-        backWall.position.set(0, 10, -6);
-        backWall.receiveShadow = true;
-        scene.add(backWall);
+        backWall.position.set(0, 10, -6); backWall.receiveShadow = true; scene.add(backWall);
 
-        // 3. Geometría Metálica (Planta)
-        const plantGeo = new THREE.TorusKnotGeometry(1.5, 0.4, 250, 32, 4, 7);
+        // 2. GENERADOR DE TEXTURA DE MALLA METÁLICA PERFORADA
+        function createMeshTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128; // Resolución del patrón
+            canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+
+            // Fondo Blanco (Metal Sólido)
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, 128, 128);
+
+            // Agujeros Negros (Transparencia)
+            ctx.fillStyle = '#000000';
+            const radius = 24; // Tamaño del agujero
+            const spacing = 64; // Distancia entre agujeros
+
+            for (let x = 0; x <= 128; x += spacing) {
+                for (let y = 0; y <= 128; y += spacing) {
+                    // Círculos alineados
+                    ctx.beginPath();
+                    ctx.arc(x, y, radius, 0, Math.PI * 2);
+                    ctx.fill();
+                    // Círculos intercalados (patrón hexagonal de malla)
+                    ctx.beginPath();
+                    ctx.arc(x + spacing/2, y + spacing/2, radius, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(8, 8); // Qué tan densa es la malla
+            return texture;
+        }
+
+        const meshAlphaMap = createMeshTexture();
+
+        // Material con AlphaTest (Crucial para las sombras perforadas)
         const plantMat = new THREE.MeshStandardMaterial({ 
-            color: 0xaaaaaa, wireframe: true, metalness: 1, roughness: 0.1 
+            color: 0x999999, 
+            metalness: 1.0, 
+            roughness: 0.3,
+            alphaMap: meshAlphaMap,
+            alphaTest: 0.4, // Todo lo negro en la textura se vuelve 100% transparente
+            side: THREE.DoubleSide // Se renderiza por dentro y por fuera
         });
-        const plant = new THREE.Mesh(plantGeo, plantMat);
-        plant.position.set(0, 3, 0);
-        plant.castShadow = true;
-        scene.add(plant);
+
+        // 3. Geometría (Forma de Oreja de Conejo)
+        const plantGroup = new THREE.Group();
+        const leafGeo = new THREE.SphereGeometry(1, 64, 64);
+        
+        // Creamos 5 hojas y las deformamos
+        for(let i=0; i<5; i++) {
+            const leaf = new THREE.Mesh(leafGeo, plantMat);
+            // Deformación: Achatadas (Z), altas (Y), anchura media (X)
+            leaf.scale.set(0.8, 2.5, 0.15); 
+            // Posicionamiento en círculo apuntando hacia afuera
+            const angle = (i / 5) * Math.PI * 2;
+            leaf.position.x = Math.cos(angle) * 0.5;
+            leaf.position.z = Math.sin(angle) * 0.5;
+            leaf.position.y = 2.5;
+            leaf.rotation.y = -angle;
+            leaf.rotation.x = 0.2; // Inclinación hacia afuera
+            leaf.castShadow = true;
+            plantGroup.add(leaf);
+        }
+        scene.add(plantGroup);
 
         // 4. Iluminación (Contrapicado)
-        scene.add(new THREE.AmbientLight(0x111111)); // Muy oscura
+        scene.add(new THREE.AmbientLight(0x080808));
 
-        const spotLight = new THREE.SpotLight(0xffaa00, 800); // Ámbar inicial
-        spotLight.position.set(0, -2, 4); // Ubicada ABAJO y adelante
-        spotLight.target = plant; // Apunta directo a la planta
-        spotLight.angle = 0.2; // Cerrada inicialmente
-        spotLight.penumbra = 0.5;
+        const spotLight = new THREE.SpotLight(0xffffff, 0); 
+        spotLight.position.set(0, -1, 3); // Abajo y adelante
+        spotLight.target = plantGroup;
+        spotLight.angle = 0.2; 
+        spotLight.penumbra = 0.3; // Bordes de sombra más duros
         spotLight.decay = 1.5;
         spotLight.distance = 50;
         spotLight.castShadow = true;
-        spotLight.shadow.mapSize.width = 2048;
-        spotLight.shadow.mapSize.height = 2048;
+        // Sombra en altísima resolución para captar los agujeritos de la malla
+        spotLight.shadow.mapSize.width = 4096; 
+        spotLight.shadow.mapSize.height = 4096;
+        spotLight.shadow.bias = -0.0001; // Evita artefactos visuales
         scene.add(spotLight);
 
-        // 5. Animación e Interpolación (Lerp)
-        let currentScale = 0.5;
-        let currentHue = 0.5;
-        let currentAperture = 0.2;
+        // 5. Animación e Interpolación
+        let currentInt = 0.5, currentSat = 0.0, currentAper = 0.2;
+        const colorFrio = new THREE.Color(0x556677); 
+        const colorRojoPastel = new THREE.Color(0xff8888); 
 
         function animate() {
             requestAnimationFrame(animate);
 
-            // Rotación base de la planta
-            plant.rotation.y += 0.003;
-            plant.rotation.x += 0.001;
-
-            // Suavizado de datos (Glide/Portamento)
-            currentScale += (window.targetScale - currentScale) * 0.1;
-            currentHue += (window.targetHue - currentHue) * 0.1;
-            currentAperture += (window.targetAperture - currentAperture) * 0.1;
-
-            // MAPEO 1: Mano Izquierda -> Escala (Tamaño) de la planta
-            // Mapeamos de 1x (mínimo) a 2.5x (máximo)
-            const scaleValue = 1 + (currentScale * 1.5);
-            plant.scale.set(scaleValue, scaleValue, scaleValue);
+            // Pequeño movimiento orgánico
+            plantGroup.rotation.y += 0.002; 
             
-            // Ajustamos la altura Y para que no atraviese el piso al crecer
-            plant.position.y = 3 + (currentScale * 1.5);
+            // Respiración de las hojas
+            const time = Date.now() * 0.001;
+            plantGroup.children.forEach((leaf, index) => {
+                leaf.rotation.x = 0.2 + Math.sin(time + index) * 0.05;
+            });
 
-            // MAPEO 2: Mano Derecha -> Tono de Color (Hue)
-            // HSL en Threejs: Hue va de 0 a 1. 
-            // 0.08 es Naranja/Ámbar, 0.5 es Cian.
-            const hueValue = 0.08 + (currentHue * 0.42);
-            spotLight.color.setHSL(hueValue, 1.0, 0.5);
+            // Suavizado (Lerp) de MediaPipe
+            currentInt += (window.targetIntensity - currentInt) * 0.1;
+            currentSat += (window.targetColorSat - currentSat) * 0.1;
+            currentAper += (window.targetAperture - currentAper) * 0.1;
 
-            // MAPEO 3: Abrir Manos -> Ángulo de Luz y Niebla
-            spotLight.angle = 0.1 + (currentAperture * 0.7); // Abre el cono
-            scene.fog.density = 0.02 + (currentAperture * 0.05); // Aumenta la densidad de niebla
+            // Mapeo
+            spotLight.intensity = 50 + (currentInt * 2500); // Mucha más intensidad máxima
+            spotLight.color.lerpColors(colorFrio, colorRojoPastel, currentSat);
+            spotLight.angle = 0.15 + (currentAper * 0.6); 
+            scene.fog.density = 0.02 + (currentAper * 0.05);
 
             renderer.render(scene, cam3D);
         }
-
         animate();
 
-        // Responsive
         window.addEventListener('resize', () => {
             cam3D.aspect = window.innerWidth / window.innerHeight;
             cam3D.updateProjectionMatrix();
