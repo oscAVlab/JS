@@ -3,144 +3,101 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Jardín Secreto - Macro Bosque</title>
+    <title>Jardín Secreto - Debug Mode</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: monospace; color: #fff; }
-        #info { position: absolute; top: 20px; left: 20px; z-index: 10; background: rgba(0,0,0,0.8); padding: 15px; border: 1px solid #444; border-radius: 8px; pointer-events: none; font-size: 11px; }
+        #info { position: absolute; top: 20px; left: 20px; z-index: 10; background: rgba(0,0,0,0.9); padding: 15px; border: 1px solid #ff0055; border-radius: 8px; pointer-events: none; max-width: 300px; }
         #video_debug { position: absolute; bottom: 20px; right: 20px; width: 150px; border-radius: 8px; transform: scaleX(-1); border: 1px solid #444; opacity: 0.5; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
 </head>
 <body>
-    <div id="info"><h3>GENERANDO MACRO-BOSQUE...</h3><p>Iniciando InstancedMesh con chqui2.obj</p></div>
+    <div id="info"><h3>ESTADO DEL SISTEMA</h3><p id="status">Iniciando motor...</p></div>
     <video id="video_debug" autoplay playsinline></video>
 
     <script type="module">
         import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
         import { OBJLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/OBJLoader.js';
 
-        // --- CONFIGURACIÓN ESCENA MACRO ---
+        const statusLabel = document.getElementById('status');
         const scene = new THREE.Scene();
-        scene.fog = new THREE.FogExp2(0x000000, 0.08);
-
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 100);
-        // Cámara muy baja para sensación macro
-        camera.position.set(0, 0.5, 3); 
-        camera.lookAt(0, 1, 0);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 1, 4);
 
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
         document.body.appendChild(renderer.domElement);
 
-        // --- LUCES CONTROLABLES ---
-        const light = new THREE.PointLight(0xffffff, 0);
-        light.position.set(0, -1, 2); 
+        const light = new THREE.PointLight(0xffffff, 50);
+        light.position.set(0, 2, 2);
         scene.add(light);
 
-        const spotLight = new THREE.SpotLight(0xffffff, 0);
-        spotLight.position.set(0, -2, 5);
-        spotLight.angle = 0.5;
-        scene.add(spotLight);
-
-        // --- CARGA E INSTANCIADO ---
-        let instancedMesh;
-        const count = 150; // Cantidad de rosas
-        const dummy = new THREE.Object3D();
-
+        // --- CARGA DE OBJETO CON FALLBACK ---
         const loader = new OBJLoader();
-        loader.load('chqui2.obj', (obj) => {
-            let geometry;
-            obj.traverse(child => {
-                if (child.isMesh) geometry = child.geometry;
-            });
+        let instancedMesh;
+        const count = 100;
 
-            const material = new THREE.MeshStandardMaterial({
-                color: 0xaaaaaa,
-                wireframe: true,
-                metalness: 1,
-                roughness: 0.3
-            });
+        statusLabel.innerText = "Buscando chqui2.obj...";
 
-            instancedMesh = new THREE.InstancedMesh(geometry, material, count);
+        loader.load('chqui2.obj', 
+            (obj) => {
+                // EXITO: Cargó tu rosa
+                let geo;
+                obj.traverse(c => { if(c.isMesh) geo = c.geometry; });
+                initInstancing(geo, true);
+                statusLabel.innerText = "Rosa chqui2.obj cargada con éxito.";
+            },
+            (xhr) => {
+                statusLabel.innerText = "Cargando: " + Math.round((xhr.loaded / xhr.total * 100)) + "%";
+            },
+            (err) => {
+                // FALLO: Usamos un cubo para no dejarte a oscuras
+                console.error("No se pudo cargar el OBJ. Usando fallback.");
+                statusLabel.innerHTML = "<b style='color:yellow'>AVISO:</b> No encontré 'chqui2.obj'.<br>Usando cubos de prueba.";
+                initInstancing(new THREE.BoxGeometry(0.1, 0.1, 0.1), false);
+            }
+        );
+
+        function initInstancing(geometry, isRealObj) {
+            const mat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, wireframe: true, metalness: 1 });
+            instancedMesh = new THREE.InstancedMesh(geometry, mat, count);
+            const dummy = new THREE.Object3D();
             
-            // Posicionar las rosas aleatoriamente en un clúster denso
             for (let i = 0; i < count; i++) {
-                dummy.position.set(
-                    (Math.random() - 0.5) * 10,
-                    (Math.random() - 0.5) * 5,
-                    (Math.random() - 0.5) * 8
-                );
-                dummy.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
-                // Escala aleatoria basada en tus coordenadas pequeñas
-                const s = 100 + Math.random() * 200; 
+                dummy.position.set((Math.random()-0.5)*10, Math.random()*5, (Math.random()-0.5)*10);
+                dummy.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, 0);
+                // Si es tu OBJ (que es micro), escalamos mucho. Si es el cubo, poco.
+                const s = isRealObj ? 150 : 1; 
                 dummy.scale.set(s, s, s);
                 dummy.updateMatrix();
                 instancedMesh.setMatrix(i, dummy.matrix);
             }
-
             scene.add(instancedMesh);
-            document.getElementById('info').innerHTML = "<h3>MACRO JARDÍN LISTO</h3><p>Mano Izq: Intensidad | Mano Der: Color | Apertura: Escala</p>";
-        });
+        }
 
-        // --- INTERACCIÓN ---
-        window.targetInt = 0;
-        window.targetScale = 1;
-        window.targetColor = new THREE.Color(0xffffff);
-
-        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.5 });
-
-        hands.onResults(results => {
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length === 2) {
-                const h1 = results.multiHandLandmarks[0][9];
-                const h2 = results.multiHandLandmarks[1][9];
-
-                // Luz (Altura manos)
-                window.targetInt = (1.0 - h1.y) * 200;
-                
-                // Color (Inclinación mano der)
-                window.targetColor.setHSL((1.0 - h2.y) * 0.1, 0.8, 0.6); // Rango hacia rojos/naranjas
-
-                // Escala (Distancia entre manos)
-                window.targetScale = 0.5 + Math.hypot(h1.x - h2.x, h1.y - h2.y) * 2;
+        // --- MEDIAPIPE ---
+        window.targetInt = 50;
+        const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
+        hands.setOptions({ maxNumHands: 2, modelComplexity: 1 });
+        hands.onResults(res => {
+            if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
+                const h = res.multiHandLandmarks[0][9];
+                window.targetInt = (1.0 - h.y) * 200;
             }
         });
 
         const video = document.getElementById('video_debug');
-        const cameraMP = new Camera(video, {
-            onFrame: async () => { await hands.send({image: video}); },
-            width: 640, height: 480
-        });
-        cameraMP.start();
+        const cam = new Camera(video, { onFrame: async () => { await hands.send({image: video}); } });
+        cam.start();
 
-        // --- LOOP ---
         function animate() {
             requestAnimationFrame(animate);
-
-            if (instancedMesh) {
-                light.intensity += (window.targetInt - light.intensity) * 0.1;
-                spotLight.intensity = light.intensity * 1.5;
-                light.color.lerp(window.targetColor, 0.1);
-                spotLight.color.copy(light.color);
-
-                // Movimiento sutil de cámara "macro"
-                camera.position.x = Math.sin(Date.now() * 0.0005) * 0.5;
-                
-                // Aplicar escala global al grupo si se desea o mover el clúster
-                instancedMesh.scale.lerp(new THREE.Vector3(window.targetScale, window.targetScale, window.targetScale), 0.05);
-            }
-
+            light.intensity += (window.targetInt - light.intensity) * 0.1;
+            if(instancedMesh) instancedMesh.rotation.y += 0.002;
             renderer.render(scene, camera);
         }
         animate();
-
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
     </script>
 </body>
 </html>
