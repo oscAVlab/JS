@@ -8,14 +8,14 @@
         body { margin: 0; overflow: hidden; background-color: #000; font-family: monospace; color: #00ff88; }
         #interface { 
             position: absolute; inset: 0; display: flex; flex-direction: column; 
-            align-items: center; justify-content: center; z-index: 100; background: rgba(0,0,0,0.85); 
+            align-items: center; justify-content: center; z-index: 100; background: rgba(0,0,0,0.8); 
         }
         button { 
             padding: 20px 50px; font-size: 22px; background: #00ff88; color: #000; 
             border: none; cursor: pointer; border-radius: 10px; font-weight: bold;
         }
-        #status { margin-top: 20px; font-size: 14px; color: #fff; text-align: center; }
-        #video_debug { position: absolute; bottom: 10px; left: 10px; width: 120px; border: 1px solid #333; transform: scaleX(-1); z-index: 50; }
+        #status { margin-top: 20px; font-size: 14px; color: #fff; text-align: center; max-width: 80%; }
+        #v_debug { position: absolute; bottom: 10px; left: 10px; width: 130px; border: 1px solid #333; transform: scaleX(-1); z-index: 50; border-radius: 5px; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
@@ -24,10 +24,10 @@
 
     <div id="interface">
         <button id="btnStart">ENTRAR AL JARDÍN</button>
-        <div id="status">Iniciando...</div>
+        <div id="status">Iniciando sistema...</div>
     </div>
 
-    <video id="video_debug" autoplay playsinline></video>
+    <video id="v_debug" autoplay playsinline></video>
 
     <script type="module">
         import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
@@ -39,77 +39,121 @@
 
         // --- 1. ESCENA 3D ---
         const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-        camera.position.set(0, 2, 5);
+        scene.fog = new THREE.FogExp2(0x000000, 0.1);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.01, 1000);
+        camera.position.set(0, 0.8, 4); // Cámara baja (Macro)
 
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
         document.body.appendChild(renderer.domElement);
 
-        const light = new THREE.PointLight(0xffffff, 100);
-        light.position.set(0, 5, 5);
-        scene.add(light);
-        scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+        const spotLight = new THREE.SpotLight(0xffffff, 0); // Intensidad controlada por manos
+        spotLight.position.set(0, -2, 5); 
+        scene.add(spotLight);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.2));
 
         // --- 2. CARGA DEL OBJETO (chqui2.obj) ---
-        let rosa;
+        let instancedMesh;
+        const count = 60; // Cantidad de rosas en el bosque
         const loader = new OBJLoader();
         
-        status.innerText = "Buscando chqui2.obj...";
+        status.innerText = "Buscando archivo chqui2.obj...";
 
         loader.load('./chqui2.obj', 
             (obj) => {
-                status.innerText = "Rosa cargada correctamente.";
-                rosa = obj;
                 let geo;
                 obj.traverse(c => { if(c.isMesh) geo = c.geometry; });
                 
-                const mat = new THREE.MeshStandardMaterial({ color: 0x00ff88, wireframe: true });
-                const mesh = new THREE.InstancedMesh(geo, mat, 40);
+                const mat = new THREE.MeshStandardMaterial({ 
+                    color: 0x00ff88, wireframe: true, metalness: 1, roughness: 0.1 
+                });
+
+                instancedMesh = new THREE.InstancedMesh(geo, mat, count);
                 const dummy = new THREE.Object3D();
-                for(let i=0; i<40; i++){
-                    dummy.position.set((Math.random()-0.5)*10, (Math.random()-0.5)*10, (Math.random()-0.5)*10);
-                    dummy.scale.set(150, 150, 150);
+                
+                for(let i=0; i<count; i++){
+                    // Dispersión del bosque
+                    dummy.position.set((Math.random()-0.5)*10, (Math.random()-0.5)*4, (Math.random()-0.5)*8);
+                    dummy.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, 0);
+                    
+                    // Escala masiva porque los vértices de chqui2 son diminutos (~0.006)
+                    const s = 180 + Math.random() * 100;
+                    dummy.scale.set(s, s, s);
                     dummy.updateMatrix();
-                    mesh.setMatrix(i, dummy.matrix);
+                    instancedMesh.setMatrix(i, dummy.matrix);
                 }
-                scene.add(mesh);
+                scene.add(instancedMesh);
+                status.innerText = "Rosa cargada. Pulsa ENTRAR.";
             },
             undefined,
             (err) => {
-                status.innerHTML = "<span style='color:red'>Error: chqui2.obj no encontrado. Revisa el nombre en GitHub.</span>";
-                console.error(err);
+                status.innerHTML = "<span style='color:red'>ERROR: No se encontró chqui2.obj en la raíz del repo.</span>";
             }
         );
 
-        // --- 3. CÁMARA Y MEDIAPIPE ---
-        async function activarCamara() {
-            status.innerText = "Solicitando cámara...";
+        // --- 3. CÁMARA Y CONTROL DE LUCES ---
+        window.targetInt = 0;
+        window.targetColor = new THREE.Color(0xffffff);
+
+        async function initCamera() {
+            status.innerText = "Solicitando permisos de cámara...";
             try {
                 const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
-                hands.setOptions({ maxNumHands: 1, modelComplexity: 1 });
+                hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.5 });
                 
-                const video = document.getElementById('video_debug');
-                const cam = new Camera(video, {
+                hands.onResults(res => {
+                    if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
+                        const h1 = res.multiHandLandmarks[0][9]; // Centro de la mano
+                        
+                        // Control de Intensidad (Altura de mano)
+                        window.targetInt = (1.0 - h1.y) * 400;
+
+                        // Control de Color (Si hay segunda mano)
+                        if (res.multiHandLandmarks.length === 2) {
+                            const h2 = res.multiHandLandmarks[1][9];
+                            window.targetColor.setHSL((1.0 - h2.y) * 0.2, 0.8, 0.6); // De blanco a rojo/naranja
+                        }
+                    }
+                });
+
+                const video = document.getElementById('v_debug');
+                const cameraPipe = new Camera(video, {
                     onFrame: async () => { await hands.send({image: video}); },
                     width: 640, height: 480
                 });
 
-                await cam.start();
-                interfaceDiv.style.display = 'none';
+                await cameraPipe.start();
+                interfaceDiv.style.display = 'none'; // Quitar overlay al éxito
                 animate();
             } catch (e) {
-                alert("La cámara falló: " + e.message);
-                status.innerText = "Error de cámara: " + e.message;
+                alert("La cámara no inició: " + e.message);
+                status.innerText = "Error: " + e.message;
             }
         }
 
-        btnStart.onclick = activarCamara;
+        btnStart.onclick = initCamera;
 
+        // --- 4. BUCLE DE ANIMACIÓN ---
         function animate() {
             requestAnimationFrame(animate);
+
+            // Suavizado de luces
+            spotLight.intensity += (window.targetInt - spotLight.intensity) * 0.1;
+            spotLight.color.lerp(window.targetColor, 0.1);
+
+            if(instancedMesh) {
+                instancedMesh.rotation.y += 0.001; // Rotación lenta del bosque
+            }
+
             renderer.render(scene, camera);
         }
+
+        window.onresize = () => {
+            camera.aspect = window.innerWidth/window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        };
     </script>
 </body>
 </html>
