@@ -3,125 +3,133 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Jardín Secreto - Rosa chqui2.obj</title>
+    <title>Jardín Secreto - Macro Bosque</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: monospace; color: #fff; }
-        #info { position: absolute; top: 20px; left: 20px; z-index: 10; background: rgba(0,0,0,0.8); padding: 15px; border: 1px solid #444; border-radius: 8px; pointer-events: none; }
-        #video_debug { position: absolute; bottom: 20px; right: 20px; width: 200px; border-radius: 8px; transform: scaleX(-1); border: 1px solid #444; }
+        #info { position: absolute; top: 20px; left: 20px; z-index: 10; background: rgba(0,0,0,0.8); padding: 15px; border: 1px solid #444; border-radius: 8px; pointer-events: none; font-size: 11px; }
+        #video_debug { position: absolute; bottom: 20px; right: 20px; width: 150px; border-radius: 8px; transform: scaleX(-1); border: 1px solid #444; opacity: 0.5; }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
 </head>
 <body>
-    <div id="info"><h3>CARGANDO ROSA...</h3><p>Asegúrate de tener chqui2.obj en la misma carpeta.</p></div>
+    <div id="info"><h3>GENERANDO MACRO-BOSQUE...</h3><p>Iniciando InstancedMesh con chqui2.obj</p></div>
     <video id="video_debug" autoplay playsinline></video>
 
     <script type="module">
         import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
         import { OBJLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/OBJLoader.js';
 
-        // --- CONFIGURACIÓN DE ESCENA ---
+        // --- CONFIGURACIÓN ESCENA MACRO ---
         const scene = new THREE.Scene();
-        scene.fog = new THREE.FogExp2(0x000000, 0.05);
+        scene.fog = new THREE.FogExp2(0x000000, 0.08);
 
-        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.set(0, 5, 15);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 100);
+        // Cámara muy baja para sensación macro
+        camera.position.set(0, 0.5, 3); 
+        camera.lookAt(0, 1, 0);
 
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.shadowMap.enabled = true;
+        renderer.setPixelRatio(window.devicePixelRatio);
         document.body.appendChild(renderer.domElement);
 
-        // Iluminación Contrapicado
-        const light = new THREE.SpotLight(0xffffff, 100);
-        light.position.set(0, -2, 5);
-        light.castShadow = true;
-        light.angle = 0.3;
+        // --- LUCES CONTROLABLES ---
+        const light = new THREE.PointLight(0xffffff, 0);
+        light.position.set(0, -1, 2); 
         scene.add(light);
-        scene.add(new THREE.AmbientLight(0x111111));
 
-        // Pared de fondo para sombras
-        const wall = new THREE.Mesh(new THREE.PlaneGeometry(50, 50), new THREE.MeshStandardMaterial({ color: 0xffffff }));
-        wall.position.z = -5;
-        wall.receiveShadow = true;
-        scene.add(wall);
+        const spotLight = new THREE.SpotLight(0xffffff, 0);
+        spotLight.position.set(0, -2, 5);
+        spotLight.angle = 0.5;
+        scene.add(spotLight);
 
-        // --- CARGA DEL OBJETO chqui2.obj ---
-        let rosaPrincipal = null;
+        // --- CARGA E INSTANCIADO ---
+        let instancedMesh;
+        const count = 150; // Cantidad de rosas
+        const dummy = new THREE.Object3D();
+
         const loader = new OBJLoader();
-        
         loader.load('chqui2.obj', (obj) => {
-            rosaPrincipal = obj;
-            
-            // Aplicar el material Mesh Metálico a todas las partes del objeto
-            const meshMaterial = new THREE.MeshStandardMaterial({
+            let geometry;
+            obj.traverse(child => {
+                if (child.isMesh) geometry = child.geometry;
+            });
+
+            const material = new THREE.MeshStandardMaterial({
                 color: 0xaaaaaa,
-                wireframe: true, // Esto crea el efecto visual de malla
+                wireframe: true,
                 metalness: 1,
-                roughness: 0.2
+                roughness: 0.3
             });
 
-            obj.traverse((child) => {
-                if (child.isMesh) {
-                    child.material = meshMaterial;
-                    child.castShadow = true;
-                }
-            });
+            instancedMesh = new THREE.InstancedMesh(geometry, material, count);
+            
+            // Posicionar las rosas aleatoriamente en un clúster denso
+            for (let i = 0; i < count; i++) {
+                dummy.position.set(
+                    (Math.random() - 0.5) * 10,
+                    (Math.random() - 0.5) * 5,
+                    (Math.random() - 0.5) * 8
+                );
+                dummy.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
+                // Escala aleatoria basada en tus coordenadas pequeñas
+                const s = 100 + Math.random() * 200; 
+                dummy.scale.set(s, s, s);
+                dummy.updateMatrix();
+                instancedMesh.setMatrix(i, dummy.matrix);
+            }
 
-            obj.position.set(0, 0, 0);
-            scene.add(obj);
-            document.getElementById('info').innerHTML = "<h3>SISTEMA LISTO</h3><p>Usa tus manos frente a la cámara.</p>";
-        }, 
-        (xhr) => { console.log((xhr.loaded / xhr.total * 100) + '% cargado'); },
-        (error) => { document.getElementById('info').innerHTML = "<h3>ERROR</h3><p>No se encontró chqui2.obj</p>"; }
-        );
+            scene.add(instancedMesh);
+            document.getElementById('info').innerHTML = "<h3>MACRO JARDÍN LISTO</h3><p>Mano Izq: Intensidad | Mano Der: Color | Apertura: Escala</p>";
+        });
 
-        // --- LÓGICA DE MEDIAPIPE ---
-        window.targetSize = 1;
-        window.targetIntensity = 100;
+        // --- INTERACCIÓN ---
+        window.targetInt = 0;
+        window.targetScale = 1;
         window.targetColor = new THREE.Color(0xffffff);
 
         const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
         hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.5 });
 
-        hands.onResults((results) => {
+        hands.onResults(results => {
             if (results.multiHandLandmarks && results.multiHandLandmarks.length === 2) {
                 const h1 = results.multiHandLandmarks[0][9];
                 const h2 = results.multiHandLandmarks[1][9];
+
+                // Luz (Altura manos)
+                window.targetInt = (1.0 - h1.y) * 200;
                 
-                // Apertura de manos -> Tamaño
-                const dist = Math.hypot(h1.x - h2.x, h1.y - h2.y);
-                window.targetSize = 0.5 + (dist * 2);
+                // Color (Inclinación mano der)
+                window.targetColor.setHSL((1.0 - h2.y) * 0.1, 0.8, 0.6); // Rango hacia rojos/naranjas
 
-                // Mano Derecha (Y) -> Intensidad luz
-                window.targetIntensity = (1.0 - h1.y) * 500;
-
-                // Mano Izquierda (Y) -> Color (Hacia Rojo Pastel)
-                const hue = (1.0 - h2.y);
-                window.targetColor.setHSL(0, hue, 0.8); 
+                // Escala (Distancia entre manos)
+                window.targetScale = 0.5 + Math.hypot(h1.x - h2.x, h1.y - h2.y) * 2;
             }
         });
 
-        const videoElement = document.getElementById('video_debug');
-        const cameraPipe = new Camera(videoElement, {
-            onFrame: async () => { await hands.send({image: videoElement}); },
+        const video = document.getElementById('video_debug');
+        const cameraMP = new Camera(video, {
+            onFrame: async () => { await hands.send({image: video}); },
             width: 640, height: 480
         });
-        cameraPipe.start();
+        cameraMP.start();
 
-        // --- BUCLE DE ANIMACIÓN ---
+        // --- LOOP ---
         function animate() {
             requestAnimationFrame(animate);
 
-            if (rosaPrincipal) {
-                // Suavizado de movimientos
-                const s = window.targetSize;
-                rosaPrincipal.scale.lerp(new THREE.Vector3(s, s, s), 0.1);
-                rosaPrincipal.rotation.y += 0.005;
-
-                // Actualizar Luz
-                light.intensity += (window.targetIntensity - light.intensity) * 0.1;
+            if (instancedMesh) {
+                light.intensity += (window.targetInt - light.intensity) * 0.1;
+                spotLight.intensity = light.intensity * 1.5;
                 light.color.lerp(window.targetColor, 0.1);
+                spotLight.color.copy(light.color);
+
+                // Movimiento sutil de cámara "macro"
+                camera.position.x = Math.sin(Date.now() * 0.0005) * 0.5;
+                
+                // Aplicar escala global al grupo si se desea o mover el clúster
+                instancedMesh.scale.lerp(new THREE.Vector3(window.targetScale, window.targetScale, window.targetScale), 0.05);
             }
 
             renderer.render(scene, camera);
